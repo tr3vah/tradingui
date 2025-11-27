@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>TradingUI — PyScript</title>
+    <link rel="stylesheet" href="style.css" />
+
+    <!-- PyScript (Pyodide) -->
+    <link rel="stylesheet" href="https://pyscript.net/latest/pyscript.css" />
+    <script defer src="https://pyscript.net/latest/pyscript.js"></script>
+
+    <!-- Plotly for browser plotting -->
+    <script src="https://cdn.plot.ly/plotly-2.29.0.min.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>TradingUI (PyScript)</h1>
+      <p>Run Python in the browser to fetch/download and plot historical OHLC data.</p>
+    </header>
+
+    <nav class="tabs">
+      <button class="tablink active" data-target="fetch">Fetch</button>
+      <button class="tablink" data-target="storage">Storage</button>
+      <button class="tablink" data-target="plot">Plot</button>
+    </nav>
+
+    <main>
+      <section id="fetch" class="tab active">
+        <h2>Fetch</h2>
+        <div class="form-row">
+          <label>Symbol</label>
+          <input id="symbol" value="AAPL" />
+        </div>
+        <div class="form-row">
+          <label>Start date</label>
+          <input id="start_date" type="date" />
+        </div>
+        <div class="form-row">
+          <label>End date</label>
+          <input id="end_date" type="date" />
+        </div>
+        <div class="form-row">
+          <button id="fetch_button" py-click="py_fetch">Fetch CSV (Yahoo endpoint)</button>
+          <em>Note: If the remote endpoint enforces CORS the fetch may fail — try uploading a CSV or run a local proxy.</em>
+        </div>
+
+        <div class="form-row">
+          <label>Or upload a CSV</label>
+          <input id="file_input" type="file" accept=".csv" py-change="py_upload" />
+        </div>
+
+        <div id="fetch_result"></div>
+      </section>
+
+      <section id="storage" class="tab">
+        <h2>Storage</h2>
+        <div>
+          <button py-click="py_list_storage">List saved CSVs</button>
+          <div id="storage_list"></div>
+        </div>
+      </section>
+
+      <section id="plot" class="tab">
+        <h2>Plot</h2>
+        <div class="form-row">
+          <label>Choose stored CSV</label>
+          <select id="plot_csv_select"></select>
+        </div>
+        <div class="form-row">
+          <label>Plot style</label>
+          <select id="plot_style">
+            <option value="line">Line</option>
+            <option value="candlestick">Candlestick</option>
+            <option value="heikinashi">Heikin-Ashi</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <button py-click="py_plot_from_storage">Plot</button>
+        </div>
+        <div id="plot_area" style="height:480px; width:100%;"></div>
+      </section>
+    </main>
+
+    <footer>
+      <small>PyScript demo — network/proxy/CORS restrictions may apply when attempting to fetch remote CSVs in the browser.</small>
+    </footer>
+
+    <py-script output="fetch_result" src="tradingui_pyscript.py"></py-script>
+
+    <script>
+      // Minimal tab switching
+      document.querySelectorAll('.tablink').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tablink').forEach(b => b.classList.remove('active'));
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          btn.classList.add('active');
+          document.getElementById(btn.dataset.target).classList.add('active');
+        });
+      });
+
+      // When index changes, populate plot CSV select by calling Python function (py_list_storage will update DOM too)
+      async function refreshPlotSelect(items) {
+        const sel = document.getElementById('plot_csv_select');
+        sel.innerHTML = '';
+        for (const name of items) {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.innerText = name;
+          sel.appendChild(opt);
+        }
+        return items.length;
+      }
+
+      // Provide JS helper for Python to call to set storage list
+      window._tradingui_update_storage = function(items_str) {
+        const listDiv = document.getElementById('storage_list');
+        const sel = document.getElementById('plot_csv_select');
+        let items = [];
+        try { items = JSON.parse(items_str); } catch(e) { items = []; }
+        listDiv.innerHTML = '';
+        if (items.length === 0) listDiv.innerText = 'No saved CSVs in localStorage';
+        else {
+          const ul = document.createElement('ul');
+          items.forEach(name => {
+            const li = document.createElement('li');
+            li.innerHTML = `${name} <button onclick="window._tradingui_download('${name}')">Download</button> <button onclick="window._tradingui_delete('${name}')">Delete</button>`;
+            ul.appendChild(li);
+          });
+          listDiv.appendChild(ul);
+        }
+        // update select
+        refreshPlotSelect(items);
+      }
+
+      // JS download helper
+      window._tradingui_download = function(name) {
+        const csv = localStorage.getItem(name);
+        if(!csv) return alert('Not found');
+        const blob = new Blob([csv]);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = name; a.click();
+        URL.revokeObjectURL(url);
+      }
+
+      window._tradingui_delete = function(name) {
+        localStorage.removeItem(name);
+        // ask Python to update UI
+        if (window.pyodide) {
+          try { pyodide.runPython('list_storage_and_update()'); } catch(e) { console.warn(e); }
+        }
+      }
+    </script>
+  </body>
+</html>
