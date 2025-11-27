@@ -41,9 +41,20 @@
           <input id="end_date" type="date" />
         </div>
         <div class="form-row">
-          <button id="fetch_button" py-click="py_fetch">Fetch CSV (Yahoo endpoint)</button>
+            <button id="fetch_button" py-click="py_fetch" onclick="if(!window.pyodide) _tradingui_js_fetch()">Fetch CSV (Yahoo endpoint)</button>
           <em>Note: If the remote endpoint enforces CORS the fetch may fail — try uploading a CSV or run a local proxy.</em>
         </div>
+
+          <div class="form-row">
+            <label>API base</label>
+            <input id="api_base" placeholder="/api or http://localhost:8001" value="/api" />
+          </div>
+          <div class="form-row">
+            <label>API user</label>
+            <input id="api_user" placeholder="optional username" />
+            <label style="width:auto;margin-left:8px">Password</label>
+            <input id="api_pass" type="password" placeholder="optional password" />
+          </div>
 
         <div class="form-row">
           <label>Or upload a CSV</label>
@@ -51,6 +62,7 @@
         </div>
 
         <div id="fetch_result"></div>
+        <div id="fetch_error" style="color:#ffb4b4;margin-top:8px;font-size:13px"></div>
       </section>
 
       <section id="storage" class="tab">
@@ -151,6 +163,88 @@
           try { pyodide.runPython('list_storage_and_update()'); } catch(e) { console.warn(e); }
         }
       }
+      // JS fallback: make the Fetch button always work (in case PyScript fails to load)
+      async function _tradingui_js_fetch() {
+        const out = document.getElementById('fetch_result');
+        const sym = document.getElementById('symbol').value.trim();
+        const sd = document.getElementById('start_date').value;
+        const ed = document.getElementById('end_date').value;
+        if (!sym) { out.innerText = 'Please enter a symbol'; return; }
+
+        const apiBase = (document.getElementById('api_base') && document.getElementById('api_base').value.trim()) || '';
+        let urls = [];
+        const base = apiBase.replace(/\/$/, '') || '';
+        if (sd && ed) {
+          urls = [
+            `${base}/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}`,
+            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}`
+          ];
+        } else {
+          urls = [
+            `${base}/download?symbol=${encodeURIComponent(sym)}&period=1y`,
+            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&period=1y`
+          ];
+        }
+
+        out.innerText = 'Fetching...';
+        let text = null;
+        // build headers if credentials supplied
+        let headers = {};
+        const u = document.getElementById('api_user')?.value || '';
+        const p = document.getElementById('api_pass')?.value || '';
+        if (u && p) {
+          headers['Authorization'] = 'Basic ' + btoa(`${u}:${p}`);
+        }
+
+        for (const url of urls) {
+          try {
+            const r = await fetch(url, { headers });
+            if (r.ok) { text = await r.text(); break; }
+            console.warn('proxy returned', r.status, 'for', url);
+          } catch (err) {
+            console.warn('fetch error for', url, err);
+          }
+        }
+
+        if (!text) {
+          out.innerText = 'Fetch failed — proxy and direct fetch attempts failed (CORS or network).';
+          // show a helpful hint about origins and credentials
+          const err = document.getElementById('fetch_error');
+          let hint = 'If you are running the UI from a different host/port ensure the API allows this origin. Configure TRADINGUI_API_ALLOW_ORIGINS to include ' + window.location.origin + '.';
+          if (u && p) hint += ' If using Basic Auth, ensure credentials are correct and the API is reachable.';
+          if (err) err.innerText = hint;
+          return;
+        }
+
+        // Save to localStorage like PyScript would
+        const name = `${sym}_${new Date().toISOString().replace(/[:.]/g,'')}.csv`;
+        try {
+          localStorage.setItem(name, text);
+          out.innerText = `Saved ${name} to localStorage`;
+          // update storage UI
+          try { window._tradingui_update_storage(JSON.stringify(Object.keys(localStorage).filter(k=>k.endsWith('.csv')))); } catch(e){}
+        } catch (err) {
+          out.innerText = `Failed saving CSV to localStorage: ${err}`;
+        }
+      }
+
+      // wire the send button to JS fallback too
+      document.addEventListener('DOMContentLoaded', () => {
+        const b = document.getElementById('fetch_button');
+        if (b) {
+          b.addEventListener('click', (ev) => {
+            // If PyScript runtime is present, it will handle py-click; this is a safe fallback
+            // that will run when py-fetch doesn't call or if pyodide is not available.
+            setTimeout(() => {
+              // only run fallback if the PyScript target didn't write to the output within 300ms
+              const out = document.getElementById('fetch_result');
+              if (!out || out.innerText.trim() === '' || out.innerText.includes('Fetching')) {
+                _tradingui_js_fetch();
+              }
+            }, 300);
+          });
+        }
+      });
     </script>
   </body>
 </html>

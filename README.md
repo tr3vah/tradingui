@@ -77,6 +77,34 @@ python run.py web 8000
 # then open http://localhost:8000 in your browser. The PyScript UI will attempt to use the /api/download proxy or http://localhost:8001 if available.
 ```
 
+Secure the API (CORS + Basic Auth)
+--------------------------------
+
+To safely expose the proxy server, customize allowed CORS origins and require HTTP Basic authentication using environment variables.
+
+Examples (Linux / macOS):
+
+```bash
+# restrict allowed browser origins (comma-separated) and require a username/password
+export TRADINGUI_API_ALLOW_ORIGINS="https://your-site.example,https://app.example"
+export TRADINGUI_API_BASIC_USER="my_user"
+export TRADINGUI_API_BASIC_PASS="s3cret"
+
+# start the API server (it will now require basic auth)
+python run.py api 8001
+```
+
+If the `TRADINGUI_API_BASIC_USER` and `TRADINGUI_API_BASIC_PASS` environment variables are not set the server will allow unauthenticated access (useful for local development). The `TRADINGUI_API_ALLOW_ORIGINS` variable controls which browser origins are permitted to call the API; if unset the server only allows common local-dev origins.
+
+Browser UI credentials and API base
+---------------------------------
+The web UI includes two convenience fields to help fetch data from a proxied API:
+
+- **API base** — the base path or URL for your API (defaults to `/api`). Set this to `http://localhost:8001` or your hosted API URL if the proxy runs on a different port/host.
+- **API user / password** — optional Basic Auth credentials. When provided the dashboard will include an HTTP Authorization header when calling the API so requests will authenticate correctly.
+
+If you run the UI from a Codespace preview or other host, make sure the API CORS (`TRADINGUI_API_ALLOW_ORIGINS`) includes that origin string or run both services behind the same origin to avoid preflight/CORS problems.
+
 Limitations & notes
 -------------------
 - PyScript runs in the browser (Pyodide) and will use in-browser packages; not all heavy packages behave the same as a desktop Python environment.

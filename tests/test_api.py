@@ -29,3 +29,33 @@ def test_download_endpoint(monkeypatch):
     assert 'Date' in resp.text
     # verify CORS headers exist (allow-origin should be present)
     assert 'access-control-allow-origin' in resp.headers
+
+
+def test_download_endpoint_requires_auth(monkeypatch):
+    # Patch fetcher
+    import tradingui.fetcher as fetcher
+
+    def fake_fetch_data(symbol, start=None, end=None, period=None, interval='1d', save=False, folder=None):
+        return make_df(), None
+
+    monkeypatch.setattr(fetcher, 'fetch_data', fake_fetch_data)
+
+    # Set environment variables to enable basic auth
+    monkeypatch.setenv('TRADINGUI_API_BASIC_USER', 'demo-user')
+    monkeypatch.setenv('TRADINGUI_API_BASIC_PASS', 'demo-pass')
+
+    # reload the module so it picks up environment settings
+    import importlib
+    from tradingui import api as api_mod
+    importlib.reload(api_mod)
+
+    client = TestClient(api_mod.app)
+
+    # must be unauthorized without credentials
+    r = client.get('/api/download?symbol=AAPL&period=1mo')
+    assert r.status_code == 401
+
+    # with correct credentials it succeeds
+    r2 = client.get('/api/download?symbol=AAPL&period=1mo', auth=('demo-user', 'demo-pass'))
+    assert r2.status_code == 200
+    assert 'Date' in r2.text

@@ -101,19 +101,41 @@ async def py_fetch(evt=None):
         start_ts = int((datetime.now()).timestamp()) - 365 * 24 * 3600
 
     # First try to call a local backend proxy (recommended) to avoid CORS issues.
-    # We will attempt a few likely proxy urls: relative '/api/download' or localhost:8001.
-    proxy_urls = [f'/api/download?symbol={sym}&period=1y',
+    # Use the API base provided in the UI if present; otherwise try /api and localhost:8001
+    api_base = ''
+    try:
+        api_base = (document.getElementById('api_base').value or '').rstrip('/')
+    except Exception:
+        api_base = ''
+
+    # We will attempt a few likely proxy urls: UI-provided base, then localhost:8001
+    proxy_urls = [f'{api_base}/download?symbol={sym}&period=1y' if api_base else f'/api/download?symbol={sym}&period=1y',
                   f'http://localhost:8001/api/download?symbol={sym}&period=1y']
 
     if sd and ed:
-        proxy_urls = [f'/api/download?symbol={sym}&start={sd}&end={ed}',
-                      f'http://localhost:8001/api/download?symbol={sym}&start={sd}&end={ed}']
+        proxy_urls = [f'{api_base}/download?symbol={sym}&start={sd}&end={ed}' if api_base else f'/api/download?symbol={sym}&start={sd}&end={ed}',
+                  f'http://localhost:8001/api/download?symbol={sym}&start={sd}&end={ed}']
 
     text = None
+    # If the UI provided Basic Auth credentials, include Authorization header
+    headers = {}
+    try:
+        user = document.getElementById('api_user').value or ''
+        pwd = document.getElementById('api_pass').value or ''
+        if user and pwd:
+            # use JS btoa to base64-encode
+            from js import btoa
+            headers['Authorization'] = 'Basic ' + btoa(f"{user}:{pwd}")
+    except Exception:
+        headers = {}
+
     for url in proxy_urls:
         try:
             print('Attempting proxy fetch:', url)
-            resp = await fetch(url)
+            if headers:
+                resp = await fetch(url, {'headers': headers})
+            else:
+                resp = await fetch(url)
             status = int(resp.status)
             if status == 200:
                 text = await resp.text()
@@ -130,7 +152,10 @@ async def py_fetch(evt=None):
         print('Falling back to direct fetch (may be blocked by CORS):', url)
         try:
             resp_promise = fetch(url)
-            resp = await resp_promise
+            if headers:
+                resp = await fetch(url, {'headers': headers})
+            else:
+                resp = await resp_promise
             status = int(resp.status)
             if status != 200:
                 print(f'Fetch failed (status {status}). This is likely a CORS or network restriction in the browser.')
