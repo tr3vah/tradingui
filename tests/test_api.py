@@ -31,6 +31,26 @@ def test_download_endpoint(monkeypatch):
     assert 'access-control-allow-origin' in resp.headers
 
 
+def test_download_endpoint_passes_interval(monkeypatch):
+    # Ensure interval query param is forwarded to fetcher.fetch_data
+    import tradingui.fetcher as fetcher
+
+    captured = {}
+
+    def fake_fetch(symbol, start=None, end=None, period=None, interval='1d', save=False, folder=None):
+        captured['interval'] = interval
+        return make_df(), None
+
+    monkeypatch.setattr(fetcher, 'fetch_data', fake_fetch)
+
+    from tradingui.api import app
+    client = TestClient(app)
+
+    r = client.get('/api/download?symbol=AAPL&period=1mo&interval=1h')
+    assert r.status_code == 200
+    assert captured.get('interval') == '1h'
+
+
 def test_download_endpoint_requires_auth(monkeypatch):
     # Patch fetcher
     import tradingui.fetcher as fetcher

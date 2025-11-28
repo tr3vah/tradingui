@@ -164,6 +164,12 @@ async def py_fetch(evt=None):
         return
 
     # create timestamps if dates provided, otherwise default to 1 year
+    interval = ''
+    try:
+        interval = (document.getElementById('interval').value or '').strip()
+    except Exception:
+        interval = ''
+
     if sd and ed:
         try:
             start_ts = int(datetime.fromisoformat(sd).timestamp())
@@ -185,12 +191,14 @@ async def py_fetch(evt=None):
         api_base = ''
 
     # We will attempt a few likely proxy urls: UI-provided base, then localhost:8001
-    proxy_urls = [f'{api_base}/download?symbol={sym}&period=1y' if api_base else f'/api/download?symbol={sym}&period=1y',
+    # include interval if selected
+    interval_q = f"&interval={interval}" if interval else ''
+    proxy_urls = [f'{api_base}/download?symbol={sym}&period=1y{interval_q}' if api_base else f'/api/download?symbol={sym}&period=1y{interval_q}',
                   f'http://localhost:8001/api/download?symbol={sym}&period=1y']
 
     if sd and ed:
-        proxy_urls = [f'{api_base}/download?symbol={sym}&start={sd}&end={ed}' if api_base else f'/api/download?symbol={sym}&start={sd}&end={ed}',
-                  f'http://localhost:8001/api/download?symbol={sym}&start={sd}&end={ed}']
+        proxy_urls = [f'{api_base}/download?symbol={sym}&start={sd}&end={ed}{interval_q}' if api_base else f'/api/download?symbol={sym}&start={sd}&end={ed}{interval_q}',
+              f'http://localhost:8001/api/download?symbol={sym}&start={sd}&end={ed}{interval_q}']
 
     text = None
     # If the UI provided Basic Auth credentials or saved credentials exist, include Authorization header
@@ -229,7 +237,9 @@ async def py_fetch(evt=None):
 
     if text is None:
         # fallback to direct Yahoo fetch (may fail due to CORS)
-        url = f'https://query1.finance.yahoo.com/v7/finance/download/{sym}?period1={start_ts}&period2={end_ts}&interval=1d&events=history&includeAdjustedClose=true'
+        # If direct Yahoo fetch is used, include the selected interval if provided
+        direct_interval = interval if interval else '1d'
+        url = f'https://query1.finance.yahoo.com/v7/finance/download/{sym}?period1={start_ts}&period2={end_ts}&interval={direct_interval}&events=history&includeAdjustedClose=true'
         print('Falling back to direct fetch (may be blocked by CORS):', url)
         try:
             resp_promise = fetch(url)

@@ -111,6 +111,15 @@ You can click **Login** after entering credentials in the fetch UI to persist th
 
 Security note: storing long-lived passwords in sessionStorage is only acceptable for local testing or self-hosted deployments you control; for production use a token-based flow (JWT/OAuth) or delegate authentication to a reverse-proxy with safe session cookies.
 
+Interval selection
+------------------
+
+The Fetch tab now includes an "Interval" dropdown so you can request data at different granularities (eg 1d, 1h, 5m). When you fetch via the proxy the interval is forwarded to the backend (yfinance) which will return matching OHLC data when available.
+
+Notes:
+- Not all intervals are supported for all date ranges by the data provider — for example minute-level intervals are often limited to recent history. If you request a very small interval for a long date range the provider may return an error or no data.
+- Use shorter date ranges for small intervals (like 5m/30m) and daily/week/month intervals for longer ranges.
+
 If you run the UI from a Codespace preview or other host, make sure the API CORS (`TRADINGUI_API_ALLOW_ORIGINS`) includes that origin string or run both services behind the same origin to avoid preflight/CORS problems.
 
 Limitations & notes

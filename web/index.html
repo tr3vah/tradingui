@@ -41,6 +41,17 @@
           <input id="end_date" type="date" />
         </div>
         <div class="form-row">
+          <label>Interval</label>
+          <select id="interval">
+            <option value="1d">1 day</option>
+            <option value="1wk">1 week</option>
+            <option value="1mo">1 month</option>
+            <option value="1h">1 hour</option>
+            <option value="30m">30 minutes</option>
+            <option value="5m">5 minutes</option>
+          </select>
+        </div>
+        <div class="form-row">
             <button id="fetch_button" py-click="py_fetch" onclick="if(!window.pyodide) _tradingui_js_fetch()">Fetch CSV (Yahoo endpoint)</button>
           <em>Note: If the remote endpoint enforces CORS the fetch may fail — try uploading a CSV or run a local proxy.</em>
         </div>
@@ -134,12 +145,43 @@
         let items = [];
         try { items = JSON.parse(items_str); } catch(e) { items = []; }
         listDiv.innerHTML = '';
-        if (items.length === 0) listDiv.innerText = 'No saved CSVs in localStorage';
-        else {
+        if (items.length === 0) {
+          listDiv.innerText = 'No saved CSVs in localStorage';
+        } else {
           const ul = document.createElement('ul');
           items.forEach(name => {
             const li = document.createElement('li');
-            li.innerHTML = `${name} <button onclick="window._tradingui_download('${name}')">Download</button> <button onclick="window._tradingui_delete('${name}')">Delete</button>`;
+            // name label
+            const nameSpan = document.createElement('span');
+            nameSpan.innerText = name + ' ';
+            li.appendChild(nameSpan);
+
+            // download button
+            const dBtn = document.createElement('button');
+            dBtn.type = 'button';
+            dBtn.innerText = 'Download';
+            dBtn.addEventListener('click', () => window._tradingui_download(name));
+            li.appendChild(dBtn);
+
+            // delete button
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.style.marginLeft = '8px';
+            delBtn.innerText = 'Delete';
+            delBtn.addEventListener('click', async () => {
+              // confirm
+              if (!confirm(`Delete saved CSV ${name}? This cannot be undone.`)) return;
+              window._tradingui_delete(name);
+              // update UI immediately in JS mode
+              try {
+                const keys = Object.keys(localStorage).filter(k => k.endsWith('.csv'));
+                window._tradingui_update_storage(JSON.stringify(keys));
+              } catch (e) {
+                console.warn('Failed to refresh storage list after delete', e);
+              }
+            });
+            li.appendChild(delBtn);
+
             ul.appendChild(li);
           });
           listDiv.appendChild(ul);
@@ -160,11 +202,20 @@
       }
 
       window._tradingui_delete = function(name) {
-        localStorage.removeItem(name);
-        // ask Python to update UI
+        try {
+          localStorage.removeItem(name);
+        } catch (e) {
+          console.warn('Failed to remove item from localStorage', e);
+        }
+        // Try to notify Python as well (PyScript mode) to keep Python state consistent
         if (window.pyodide) {
           try { pyodide.runPython('list_storage_and_update()'); } catch(e) { console.warn(e); }
         }
+        // And always refresh storage list in JS
+        try {
+          const keys = Object.keys(localStorage).filter(k => k.endsWith('.csv'));
+          window._tradingui_update_storage(JSON.stringify(keys));
+        } catch (e) { /* ignore */ }
       }
       // JS fallback: make the Fetch button always work (in case PyScript fails to load)
       async function _tradingui_js_fetch() {
@@ -177,15 +228,16 @@
         const apiBase = (document.getElementById('api_base') && document.getElementById('api_base').value.trim()) || '';
         let urls = [];
         const base = apiBase.replace(/\/$/, '') || '';
+        const interval = document.getElementById('interval')?.value || '';
         if (sd && ed) {
           urls = [
-            `${base}/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}`,
-            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}`
+            `${base}/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}${interval?`&interval=${encodeURIComponent(interval)}`:''}`,
+            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&start=${encodeURIComponent(sd)}&end=${encodeURIComponent(ed)}${interval?`&interval=${encodeURIComponent(interval)}`:''}`
           ];
         } else {
           urls = [
-            `${base}/download?symbol=${encodeURIComponent(sym)}&period=1y`,
-            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&period=1y`
+            `${base}/download?symbol=${encodeURIComponent(sym)}&period=1y${interval?`&interval=${encodeURIComponent(interval)}`:''}`,
+            `http://localhost:8001/api/download?symbol=${encodeURIComponent(sym)}&period=1y${interval?`&interval=${encodeURIComponent(interval)}`:''}`
           ];
         }
 

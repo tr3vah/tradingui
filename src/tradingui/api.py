@@ -88,11 +88,12 @@ os.makedirs(_CACHE_DIR, exist_ok=True)
 _CACHE_TTL = int(os.environ.get('TRADINGUI_API_CACHE_TTL', '3600'))  # seconds
 
 
-def _cache_filename(symbol: str, start: Optional[str], end: Optional[str], period: Optional[str]) -> str:
+def _cache_filename(symbol: str, start: Optional[str], end: Optional[str], period: Optional[str], interval: Optional[str] = None) -> str:
     safe = symbol.replace('/', '').replace(' ', '_')
     tag = period or start or 'latest'
     end_tag = ('_' + end) if end else ''
-    name = f"{safe}_{tag}{end_tag}.csv"
+    interval_tag = ('_' + interval) if interval else ''
+    name = f"{safe}_{tag}{end_tag}{interval_tag}.csv"
     return os.path.join(_CACHE_DIR, name)
 
 
@@ -140,6 +141,7 @@ def download(symbol: str = Query(..., description='Ticker symbol (yfinance norma
              start: Optional[str] = Query(None, description='Start date YYYY-MM-DD'),
              end: Optional[str] = Query(None, description='End date YYYY-MM-DD'),
              period: Optional[str] = Query(None, description='Short period like 1mo, 1y'),
+             interval: Optional[str] = Query(None, description='Interval (eg 1d, 1h, 5m)'),
              save: bool = Query(False, description='Whether to save the CSV on server'),
              bust_cache: bool = Query(False, description='Force refresh cache'),
              user: str = Depends(_verify_basic),
@@ -153,7 +155,7 @@ def download(symbol: str = Query(..., description='Ticker symbol (yfinance norma
 
     # Attempt to use fetcher.fetch_data which returns (df, filepath)
     # Apply simple file-based cache first
-    cache_path = _cache_filename(symbol, start, end, period)
+    cache_path = _cache_filename(symbol, start, end, period, interval)
     if not bust_cache and os.path.exists(cache_path):
         mtime = os.path.getmtime(cache_path)
         age = time.time() - mtime
@@ -163,7 +165,7 @@ def download(symbol: str = Query(..., description='Ticker symbol (yfinance norma
                 csv_text = fh.read()
             return PlainTextResponse(content=csv_text, media_type='text/csv')
     try:
-        df, filepath = fetcher.fetch_data(symbol, start=start, end=end, period=period, save=False)
+        df, filepath = fetcher.fetch_data(symbol, start=start, end=end, period=period, interval=interval or '1d', save=False)
     except Exception as exc:  # pragma: no cover - network dependent
         # Attempt to provide a helpful fallback for demo environments where yfinance is not
         # installed or the network is blocked. Try to find a matching CSV already present in
