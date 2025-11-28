@@ -54,6 +54,9 @@
             <input id="api_user" placeholder="optional username" />
             <label style="width:auto;margin-left:8px">Password</label>
             <input id="api_pass" type="password" placeholder="optional password" />
+            <button id="login_button" py-click="py_login" onclick="_tradingui_js_login()">Login</button>
+            <button id="logout_button" py-click="py_logout" onclick="_tradingui_js_logout()" style="margin-left:8px">Logout</button>
+            <div id="login_status" style="margin-left:8px;color:var(--muted)"></div>
           </div>
 
         <div class="form-row">
@@ -245,6 +248,40 @@
           });
         }
       });
+
+        // expose simple JS login/logout for when PyScript isn't available
+        window._tradingui_js_login = function() {
+          const u = document.getElementById('api_user')?.value || '';
+          const p = document.getElementById('api_pass')?.value || '';
+          if (!u || !p) {
+            alert('Enter username and password before clicking Login');
+            return;
+          }
+          try {
+            sessionStorage.setItem('tradingui_api_user', u);
+            sessionStorage.setItem('tradingui_api_pass', p);
+            const status = document.getElementById('login_status');
+            if (status) status.innerText = `Logged in as ${u}`;
+          } catch (e) { console.warn('sessionStorage not available', e); }
+        }
+
+        window._tradingui_js_logout = function() {
+          try {
+            sessionStorage.removeItem('tradingui_api_user');
+            sessionStorage.removeItem('tradingui_api_pass');
+            const status = document.getElementById('login_status');
+            if (status) status.innerText = 'Logged out';
+          } catch (e) { console.warn('sessionStorage not available', e); }
+        }
+
+        // on load, show login state if present
+        try {
+          const su = sessionStorage.getItem('tradingui_api_user');
+          if (su) {
+            const status = document.getElementById('login_status');
+            if (status) status.innerText = `Logged in as ${su}`;
+          }
+        } catch(e) { /* ignore */ }
     </script>
   </body>
 </html>

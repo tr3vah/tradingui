@@ -1,0 +1,31 @@
+version: '3.8'
+services:
+  tradingui_api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: tradingui_api:latest
+    environment:
+      # keep defaults but allow override (use a mounted cache volume)
+      - TRADINGUI_API_CACHE_DIR=/var/tradingui/cache
+      - TRADINGUI_API_CACHE_TTL=3600
+      - TRADINGUI_API_RATE_LIMIT_MAX=60
+      - TRADINGUI_API_RATE_LIMIT_WINDOW=60
+    volumes:
+      - tradingui_cache:/var/tradingui/cache
+
+  tradingui_proxy:
+    build:
+      context: .
+      dockerfile: deploy/nginx/Dockerfile
+    image: tradingui_proxy:latest
+    depends_on:
+      - tradingui_api
+    ports:
+      - "8443:443" # TLS port for access
+      - "8080:80"  # HTTP redirect (auto-redirect to HTTPS)
+    volumes:
+      - ./deploy/ssl:/etc/nginx/ssl:ro
+
+volumes:
+  tradingui_cache:

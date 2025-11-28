@@ -102,6 +102,14 @@ The web UI includes two convenience fields to help fetch data from a proxied API
 
 - **API base** — the base path or URL for your API (defaults to `/api`). Set this to `http://localhost:8001` or your hosted API URL if the proxy runs on a different port/host.
 - **API user / password** — optional Basic Auth credentials. When provided the dashboard will include an HTTP Authorization header when calling the API so requests will authenticate correctly.
+ - **API user / password** — optional Basic Auth credentials. When provided the dashboard will include an HTTP Authorization header when calling the API so requests will authenticate correctly.
+
+Login behavior
+--------------
+
+You can click **Login** after entering credentials in the fetch UI to persist them to the browser session (sessionStorage). The PyScript UI will use stored credentials automatically when calling the `/api/` endpoints so you don't have to re-enter them each time. Click **Logout** to clear the session credentials.
+
+Security note: storing long-lived passwords in sessionStorage is only acceptable for local testing or self-hosted deployments you control; for production use a token-based flow (JWT/OAuth) or delegate authentication to a reverse-proxy with safe session cookies.
 
 If you run the UI from a Codespace preview or other host, make sure the API CORS (`TRADINGUI_API_ALLOW_ORIGINS`) includes that origin string or run both services behind the same origin to avoid preflight/CORS problems.
 
@@ -117,7 +125,6 @@ Notes
 - Saved CSVs are stored in `src/data/` under the package; use the Storage tab to preview and the Plot tab to render.
 
 Running tests and examples
---------------------------
 
 Unit tests that don't require network (e.g., symbol normalization, heikin-ashi conversion) are included under `tests/`.
 
@@ -129,4 +136,56 @@ python -m pytest -q
 ```
 
 There's also an example fetcher script `examples/quick_fetch.py` which demonstrates fetching (requires yfinance/network) and creating a saved plot image.
+
+Docker Compose deployment (single-origin proxy to avoid CORS)
+-----------------------------------------------------------
+
+I added a docker-compose setup you can use to run a single-origin stack: Nginx serves the static web UI on port 8080 and proxies /api requests to the FastAPI backend on port 8001 inside the compose network. This avoids CORS problems since both the UI and the API are served from the same origin.
+
+Files added: `deploy/docker-compose.yml`, `deploy/Dockerfile.api`, `deploy/Dockerfile.web`, `deploy/nginx.conf`, `deploy/check_smoke.sh`.
+
+Quick start (requires Docker & docker-compose installed):
+
+This repo includes two convenient compose stacks:
+
+- `docker-compose.yml` (repo root) — builds the API and a custom nginx reverse-proxy which serves the static web UI and proxies `/api/` to the backend over HTTPS (TLS). Ports: 8443 (HTTPS), 8080 (HTTP -> redirect to HTTPS).
+- `deploy/docker-compose.yml` — a simpler local dev stack (no HTTPS) that serves web + api behind an nginx proxy at http://localhost:8080.
+
+Local TLS stack (recommended for same-origin HTTPS demo)
+
+```bash
+# generate self-signed certs (for local development/demo only)
+./deploy/generate-selfsigned.sh
+
+# start the TLS reverse-proxy stack (builds the images)
+docker compose up --build
+
+# open https://localhost:8443 in your browser
+```
+
+Quick local dev stack (no TLS)
+
+```bash
+docker compose -f deploy/docker-compose.yml up --build
+# open http://localhost:8080
+```
+
+To run in the background:
+
+```bash
+docker compose -f deploy/docker-compose.yml up -d --build
+
+# then run the simple smoke-check (makes HTTP requests to the proxy)
+./deploy/check_smoke.sh
+```
+
+Example to secure the API with Basic auth in the API service (env vars):
+
+```bash
+export TRADINGUI_API_BASIC_USER="my_user"
+export TRADINGUI_API_BASIC_PASS="s3cret"
+docker compose -f deploy/docker-compose.yml up --build
+```
+
+When using Basic Auth you can either enter credentials in the dashboard API user/password fields (works with PyScript and JS fallback), or configure a real authentication layer on your reverse proxy.
 

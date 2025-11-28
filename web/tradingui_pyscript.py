@@ -34,6 +34,24 @@ def _is_csv_like(text: str) -> bool:
     return '\n' in text and (',' in text or '\t' in text)
 
 
+def build_basic_auth_header(username: str, password: str) -> str:
+    """Return a Basic auth header string for the given username/password.
+
+    This works both in PyScript (using js.btoa) and in plain Python (base64).
+    """
+    if not username or not password:
+        return ''
+    try:
+        # prefer JS btoa when running in browser
+        from js import btoa
+        token = btoa(f"{username}:{password}")
+        return 'Basic ' + token
+    except Exception:
+        import base64
+        token = base64.b64encode(f"{username}:{password}".encode('utf-8')).decode('ascii')
+        return 'Basic ' + token
+
+
 def parse_csv_text(csv_text: str):
     if pd is None:
         return None
@@ -74,6 +92,64 @@ def heikin_ashi(df):
     ha['HA_High'] = ha[['HA_Open', 'HA_Close', 'High']].max(axis=1)
     ha['HA_Low'] = ha[['HA_Open', 'HA_Close', 'Low']].min(axis=1)
     return ha
+
+
+def _get_saved_credentials():
+    """Return (user, pass) from sessionStorage if available, else from DOM inputs."""
+    user = ''
+    pwd = ''
+    try:
+        sess = __import__('js').sessionStorage
+        user = sess.getItem('tradingui_api_user') or ''
+        pwd = sess.getItem('tradingui_api_pass') or ''
+    except Exception:
+        try:
+            user = document.getElementById('api_user').value or ''
+            pwd = document.getElementById('api_pass').value or ''
+        except Exception:
+            user = pwd = ''
+    return user, pwd
+
+
+def py_login(evt=None):
+    """Store provided API user/password into sessionStorage (session-only) so the UI can authenticate."""
+    try:
+        user = document.getElementById('api_user').value or ''
+        pwd = document.getElementById('api_pass').value or ''
+    except Exception:
+        print('Login: UI inputs not found')
+        return
+
+    if not user or not pwd:
+        print('Please enter username and password to login')
+        return
+
+    try:
+        sess = __import__('js').sessionStorage
+        sess.setItem('tradingui_api_user', user)
+        sess.setItem('tradingui_api_pass', pwd)
+        # update UI status if present
+        try:
+            document.getElementById('login_status').innerText = f'Logged in as {user}'
+        except Exception:
+            pass
+        print('Login stored in session')
+    except Exception as exc:
+        print('Login failed (no sessionStorage available):', exc)
+
+
+def py_logout(evt=None):
+    try:
+        sess = __import__('js').sessionStorage
+        sess.removeItem('tradingui_api_user')
+        sess.removeItem('tradingui_api_pass')
+        try:
+            document.getElementById('login_status').innerText = 'Logged out'
+        except Exception:
+            pass
+        print('Logged out')
+    except Exception:
+        print('Logout: sessionStorage not available')
 
 
 async def py_fetch(evt=None):
@@ -117,15 +193,20 @@ async def py_fetch(evt=None):
                   f'http://localhost:8001/api/download?symbol={sym}&start={sd}&end={ed}']
 
     text = None
-    # If the UI provided Basic Auth credentials, include Authorization header
+    # If the UI provided Basic Auth credentials or saved credentials exist, include Authorization header
     headers = {}
     try:
-        user = document.getElementById('api_user').value or ''
-        pwd = document.getElementById('api_pass').value or ''
+        # prefer sessionStorage values when available for persistent login within the session
+        try:
+            sess = __import__('js').sessionStorage
+            user = sess.getItem('tradingui_api_user') or ''
+            pwd = sess.getItem('tradingui_api_pass') or ''
+        except Exception:
+            user = document.getElementById('api_user').value or ''
+            pwd = document.getElementById('api_pass').value or ''
+
         if user and pwd:
-            # use JS btoa to base64-encode
-            from js import btoa
-            headers['Authorization'] = 'Basic ' + btoa(f"{user}:{pwd}")
+            headers['Authorization'] = build_basic_auth_header(user, pwd)
     except Exception:
         headers = {}
 
@@ -308,3 +389,4 @@ def list_storage_and_update():
 
 
 print('PyScript tradingui module loaded — use the Fetch, Storage, and Plot tabs.')
+
